@@ -1,0 +1,81 @@
+{
+    "nodes": [{
+            "name": "Host"
+        },
+        {
+            "name": "Tor"
+        },
+        {
+            "name": "inTor"
+        },
+        {
+            "name": "outTor"
+        },
+        {
+            "name": "inPod"
+        },
+        {
+            "name": "outPod"
+        },
+        {
+            "name": "pod1"
+        },
+        {
+            "name": "pod2"
+        },
+        {
+            "name": "pod3"
+        }
+
+    ],
+    "links": [{
+            "source": 0,
+            "target": 1,
+            "value": 99,
+            "rate":300
+        },
+        {
+            "source": 1,
+            "target": 2,
+            "value": 33,
+            "rate":200
+        },
+        {
+            "source": 1,
+            "target": 3,
+            "value": 66,
+            "rate":100
+        },
+        {
+            "source": 3,
+            "target": 4,
+            "value": 33,
+            "rate":60
+        },
+        {
+            "source": 3,
+            "target": 5,
+            "value": 33,
+            "rate":40
+        },
+        {
+            "source": 5,
+            "target": 6,
+            "value": 11,
+            "rate":20
+        },
+        {
+            "source": 5,
+            "target": 7,
+            "value": 11,
+            "rate":10
+        },
+        {
+            "source": 5,
+            "target": 8,
+            "value": 11,
+            "rate":10
+        }
+
+    ]
+}

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+
+<!-- This work is the homework of course data visualization -->
+<!-- author: sijiang huang <hsj20@mails.tsinghua.edu.cn> -->
+
+<head>
+    <meta charset="utf-8">
+    <!-- <script src="d3.min.js"></script> -->
+    <script src='https://d3js.org/d3.v6.min.js'> </script>
+</head>
+
+<body>
+    <form id="form1"
+        style="font: 12px var(--sans-serif); font-variant-numeric: tabular-nums; display: flex; height: 33px; align-items: center;">
+        <button name=b type=button style="margin-left: 5em; margin-right: 0.4em; width: 5em;"></button>
+        <label style="display: flex; align-items: center;">
+            <input name=i type=range min=0 max=100 value=0 step=1 style="width: 1000px;">
+            <output name=o style="margin-left: 0.4em;"></output>
+        </label>
+    </form>
+    <svg width="1600" height="900"> </svg>
+
+    <script>
+        let currentTime = null
+        let svg = d3.select("svg")
+
+        function Scrubber(tdata, pdata, form, values, {
+            format = value => value,
+            initial = 0,
+            delay = null,
+            autoplay = true,
+            loop = false,
+            loopDelay = null,
+            alternate = false
+        } = {}) {
+            values = Array.from(values);
+
+            form.i.max = values.length - 1
+
+            let frame = null;
+            let timer = null;
+            let interval = null;
+            let direction = 1;
+
+            function start() {
+                form.b.textContent = "Pause";
+                if (delay === null) frame = requestAnimationFrame(tick);
+                else interval = setInterval(tick, delay);
+            }
+
+            function stop() {
+                form.b.textContent = "Play";
+                if (frame !== null) cancelAnimationFrame(frame), frame = null;
+                if (timer !== null) clearTimeout(timer), timer = null;
+                if (interval !== null) clearInterval(interval), interval = null;
+            }
+
+            function running() {
+                return frame !== null || timer !== null || interval !== null;
+            }
+
+            function tick() {
+                if (form.i.valueAsNumber === (direction > 0 ? values.length - 1 : direction < 0 ? 0 : NaN)) {
+                    if (!loop) return stop();
+                    if (alternate) direction = -direction;
+                    if (loopDelay !== null) {
+                        if (frame !== null) cancelAnimationFrame(frame), frame = null;
+                        if (interval !== null) clearInterval(interval), interval = null;
+                        timer = setTimeout(() => (step(), start()), loopDelay);
+                        return;
+                    }
+                }
+                if (delay === null) frame = requestAnimationFrame(tick);
+                step();
+            }
+
+            function step() {
+                form.i.valueAsNumber = (form.i.valueAsNumber + direction + values.length) % values.length;
+                form.i.dispatchEvent(new CustomEvent("input", {
+                    bubbles: true
+                }));
+            }
+            form.i.oninput = event => {
+                if (event && event.isTrusted && running()) stop();
+                form.value = values[form.i.valueAsNumber];
+                form.o.value = format(form.value, form.i.valueAsNumber, values);
+                currentTime = form.o.value
+                FlowTrans(currentTime, tdata, pdata)
+            };
+            form.b.onclick = () => {
+                if (running()) return stop();
+                direction = alternate && form.i.valueAsNumber === values.length - 1 ? -1 : 1;
+                form.i.valueAsNumber = (form.i.valueAsNumber + direction) % values.length;
+                form.i.dispatchEvent(new CustomEvent("input", {
+                    bubbles: true
+                }));
+                start();
+            };
+            form.i.oninput();
+            if (autoplay) start();
+            else stop();
+            return form;
+        }
+
+        function PLotFlows(pathDir) {
+            d3.csv(pathDir).then(data => {
+                let nFlow = d3.max(data, d => {
+                    return Number(d.id) + 1;
+                })
+                for (i = 0; i < nFlow; i++) {
+                    let flowSlice = data.filter(d => d.id == i)
+                    var size = flowSlice[0].size
+
+                    d3.select("svg")
+                        .append('path')
+                        .attr('id', 'path' + String(i))
+                        .attr('stroke', 'red')
+                        .attr('fill', 'none')
+                        .attr('stroke-width', 5)
+                        .attr('opacity', 1)
+                        .attr('d', pathLine(flowSlice))
+                    var p = document.getElementById('path' + String(i))
+                    const len = p.getTotalLength();
+
+                    d3.select("svg")
+                        .select('#path' + String(i))
+                        .attr('stroke-dasharray', `0, ${len}`)
+                }
+            })
+        }
+
+        function PlotFlow(pathData, flowid, cwnd, length) {
+
+            var p = document.getElementById('path' + String(flowid))
+            const len = p.getTotalLength();
+            let curlen = d3.select("svg")
+                .select('#path' + String(flowid)).attr('stroke-dasharray')
+
+            length = length * len
+            curlen = curlen.split(',')
+
+            d3.select("svg")
+                .select('#path' + String(flowid))
+                .transition()
+                .ease(d3.easeLinear)
+                .attr('opacity', cwnd)
+                .duration(200)
+                .attrTween("stroke-dasharray", function () {
+                    return d3.interpolate(`${curlen[0]}, ${len}`, `${length}, ${len}`);
+                })
+        }
+
+        function FlowTrans(time, tdata, pdata) {
+            var flowSlice = tdata.filter(d => d.time == time)
+            for (slice in flowSlice) {
+                let flowPath = pdata.filter(d => d.id == flowSlice[slice].id)
+                PlotFlow(flowPath, flowPath[0].id, flowSlice[slice].cwnd, flowSlice[slice].length)
+            }
+        }
+
+        // topology
+        dataDir = './4-port/'
+        topoDir = dataDir + 'test-topo.csv'
+        lineDir = dataDir + 'test-lines.csv'
+        timeDir = dataDir + 'flows-time.csv'
+        pathDir = dataDir + 'flows-path.csv'
+        d3.csv(topoDir).then(data => {
+            d3.select("svg")
+                .selectAll('circle.server')
+                .data(data.filter(d => d.type == 'H'))
+                .enter()
+                .append('circle')
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .attr("r", 5)
+
+            d3.select("svg")
+                .selectAll('rect.switch')
+                .data(data.filter(d => d.type == 'S'))
+                .enter()
+                .append('rect')
+                .attr('x', d => d.x - 5)
+                .attr('y', d => d.y - 5)
+                .attr("height", 10)
+                .attr("width", 10)
+        })
+        d3.csv(lineDir).then(data => {
+            d3.select("svg")
+                .selectAll('line.lines')
+                .data(data)
+                .enter()
+                .append("line")
+                .attr("x1", d => d.x1)
+                .attr("x2", d => d.x2)
+                .attr("y1", d => d.y1)
+                .attr("y2", d => d.y2)
+                .attr("stroke", "black")
+                .attr("stroke-width", 5)
+                .attr("opacity", 0.06)
+                .attr('stroke-dasharray', "10,0")
+        })
+
+        d3.csv(timeDir).then(tdata => {
+            d3.csv(pathDir).then(pdata => {
+                numbers = Array.from({
+                    length: 2000
+                }, (_, i) => i / 100)
+                let form = document.getElementById("form1")
+                Scrubber(tdata, pdata, form, numbers, {
+                    autoplay: true,
+                    delay: 50
+                })
+            })
+        })
+
+        const pathLine = d3.line().x(d => d.x).y(d => d.y);
+        PLotFlows(pathDir)
+
+
+    </script>
+
+</body>

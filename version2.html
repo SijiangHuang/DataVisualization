@@ -34,6 +34,7 @@
 
     <script>
         let currentTime = null
+        let detailed_switch = -1;
 
         margin = ({ top: 100, right: 100, bottom: 50, left: 100 })
         width = 1000 - margin.left - margin.right
@@ -126,6 +127,69 @@
             if (autoplay) start();
             else stop();
             return form;
+        }
+
+        function PlotSwitchDetail(x, y, type, id) {
+
+            // 测试交换机方格
+            let rect = d3.select("#svgTopo").append('g');
+            let xx = parseFloat(x);
+            let yy = parseFloat(y);
+            let pos = [xx, yy];
+            let da = [10, 20, 25];
+            let switch_port_height = 20;
+            let switch_port_width = 20;
+
+            let switch_detail_width = 230;
+            let switch_detail_height = 160;
+
+            let switchid = id;
+
+            rect
+                .append('rect')
+                .attr('x', pos[0])
+                .attr('y', pos[1])
+                .attr("height", switch_detail_height)
+                .attr("width", switch_detail_width)
+                .attr('fill', 'white')
+                .attr("stroke", 'rgba(0, 0, 0, 0.5)')
+                .attr("stroke-width", 3)
+                .attr("id", "switch-detail-" + String(switchid))
+                .attr("class", "switch-detail-" + String(switchid))
+                .on("click", function (d, i) {
+                    // console.log(detailed_switch);
+                    if (detailed_switch >= 0) {
+                        // 删除先前的交换机
+                        d3.select("#svgTopo").selectAll("#switch-detail-" + String(detailed_switch)).remove();
+                    }
+                    detailed_switch = -1;
+                });
+
+            // 下行端口
+            for (let i = 0; i < 4; i++) {
+                rect
+                    .append('rect')
+                    .attr('x', pos[0] + switch_detail_width / 4 * i + 20)
+                    .attr('y', pos[1] + switch_detail_height - switch_port_height)
+                    .attr('width', 20)
+                    .attr("height", switch_port_height)
+                    .attr('fill', 'rgba(0, 0, 0, 0.5)')
+                    .attr("id", "switch-detail-" + String(switchid))
+                    .attr("class", "switch-port-" + String(switchid) + "-" + String(i));
+            }
+
+            // 上行端口
+            for (let i = 4; i < 8; i++) {
+                rect
+                    .append('rect')
+                    .attr('x', pos[0] + 57 * (i - 4) + 20)
+                    .attr('y', pos[1])
+                    .attr('width', 20)
+                    .attr('height', switch_port_height)
+                    .attr("class", "switch-port-" + String(switchid) + "-" + String(i))
+                    .attr("id", "switch-detail-" + String(switchid))
+                    .attr('fill', 'rgba(0, 0, 0, 0.5)');
+            }
         }
 
         function PLotFlows(pathDir) {
@@ -423,8 +487,7 @@
                 d3.selectAll('circle.server').on('mouseout', (event, d) => {
                     HostLoseFocus(d, pdata, cwnd)
                 })
-            }
-            )
+            })
             d3.select("#svgTopo")
                 .selectAll('rect.switch')
                 .data(data.filter(d => d.type == 'S'))
@@ -435,6 +498,7 @@
                 .attr('y', d => d.y - 5)
                 .attr("height", 10)
                 .attr("width", 10)
+                .attr("class", d => "switch-" + String(d.id));
         })
         d3.csv(lineDir).then(data => {
             d3.select("svg")
@@ -451,6 +515,29 @@
                 .attr("stroke-width", 5)
                 .attr("opacity", 0.06)
                 .attr('stroke-dasharray', "10,0")
+        })
+
+        d3.csv(topoDir).then(data => {
+            d3.select("#svgTopo")
+                .selectAll('rect.clickswitch')
+                .data(data.filter(d => d.type == 'S'))
+                .enter()
+                .append('rect')
+                .attr('class', 'clickswitch')
+                .attr('x', d => d.x - 15)
+                .attr('y', d => d.y - 15)
+                .attr("height", 30)
+                .attr("width", 30)
+                .attr("fill", 'rgba(0, 0, 0, 0.0)')
+                .on("click", function (d, i) {
+                    // console.log(detailed_switch);
+                    if (detailed_switch >= 0) {
+                        // 删除先前的交换机
+                        d3.select("#svgTopo").selectAll("#switch-detail-" + String(detailed_switch)).remove();
+                    }
+                    detailed_switch = parseInt(d.id);
+                    PlotSwitchDetail(d.x, d.y, d.type, d.id);
+                });
         })
 
         d3.csv(timeDir).then(tdata => {

@@ -2,7 +2,7 @@
 
 <!-- Data Center Traffic Visualization -->
 <!-- author: sijiang huang <hsj20@mails.tsinghua.edu.cn> -->
-<!-- author: cong liang < -->
+<!-- author: cong liang -->
 
 <head>
     <meta charset="utf-8">
@@ -51,7 +51,7 @@
             "pod3": "LimeGreen"
         }
 
-        function Scrubber(tdata, pdata, ndata, form, values, {
+        function Scrubber(tdata, pdata, form, values, {
             format = value => value,
             initial = 0,
             delay = null,
@@ -61,6 +61,7 @@
             alternate = false
         } = {}) {
             values = Array.from(values);
+
             form.i.max = values.length - 1
 
             let frame = null;
@@ -112,7 +113,6 @@
                 form.o.value = format(form.value, form.i.valueAsNumber, values);
                 currentTime = form.o.value
                 FlowTrans(currentTime, tdata, pdata)
-                NodeTrans(currentTime, ndata)
             };
             form.b.onclick = () => {
                 if (running()) return stop();
@@ -247,23 +247,6 @@
                 PlotFlow(flowPath, flowPath[0].id, flowSlice[slice].cwnd, flowSlice[slice].length)
             }
         }
-        function NodeTrans(time, ndata) {
-            var nodeExtent = d3.extent(ndata, function (d) { return +d.value });
-
-            var nodeScale = d3.scaleLinear().domain(nodeExtent).range([0.2, 1.5]);
-            var slice = ndata.filter(d => d.time == time)
-            slice.forEach(function (d, i) {
-                alpha = nodeScale(+d.value)
-                if (alpha > 1) {
-                    alpha = 1
-                }
-                d3.select("#svgTopo")
-                    .select("#switch" + String(i))
-                    .transition()
-                    .duration(200)
-                    .attr('opacity', alpha)
-            })
-        }
 
         function HostFocus(d, pdata) {
             p = document.getElementsByClassName('server')
@@ -316,12 +299,14 @@
 
             data.links.forEach(function (d) {
                 d.o_value = d.rate;
+                // d.value = 1;
             })
 
             data.nodes.forEach(function (d, i) {
                 d.color = colormap[d.name]
             })
 
+            console.log(data)
             sankey
                 .nodes(data.nodes)
                 .links(data.links)
@@ -361,12 +346,14 @@
                 .style("stroke", "none")
 
             var linkExtent = d3.extent(data.links, function (d) { return d.o_value });
+            console.log(linkExtent)
 
             var frequencyScale = d3.scaleLinear().domain(linkExtent).range([0.05, 1]);
             // var particleSize = d3.scaleLinear().domain(linkExtent).range([1, 5]);
 
             data.links.forEach(function (link) {
                 link.freq = frequencyScale(link.o_value);
+                console.log(link.o_value, link.freq)
                 link.particleSize = 2;
                 link.particleColor = d3.scaleLinear().domain([0, 1])
                     .range([link.source.color, link.target.color])
@@ -483,7 +470,6 @@
         lineDir = dataDir + 'test-lines.csv'
         timeDir = dataDir + 'flows-time.csv'
         pathDir = dataDir + 'flows-path.csv'
-        nodeDir = './node.csv'
         d3.csv(topoDir).then(data => {
             d3.select("#svgTopo")
                 .selectAll('circle.server')
@@ -508,15 +494,11 @@
                 .enter()
                 .append('rect')
                 .attr('class', 'switch')
-                .attr('id', (d, i) => {
-                    return 'switch' + String(i)
-                })
                 .attr('x', d => d.x - 5)
                 .attr('y', d => d.y - 5)
                 .attr("height", 10)
                 .attr("width", 10)
-                .attr("fill", 'royalblue')
-                .attr('opacity', 0.5)
+                .attr("class", d => "switch-" + String(d.id));
         })
         d3.csv(lineDir).then(data => {
             d3.select("svg")
@@ -560,15 +542,13 @@
 
         d3.csv(timeDir).then(tdata => {
             d3.csv(pathDir).then(pdata => {
-                d3.csv(nodeDir).then(ndata => {
-                    numbers = Array.from({
-                        length: 200
-                    }, (_, i) => i)
-                    let form = document.getElementById("form1")
-                    Scrubber(tdata, pdata, ndata, form, numbers, {
-                        autoplay: true,
-                        delay: 200
-                    })
+                numbers = Array.from({
+                    length: 200
+                }, (_, i) => i)
+                let form = document.getElementById("form1")
+                Scrubber(tdata, pdata, form, numbers, {
+                    autoplay: true,
+                    delay: 200
                 })
             })
         })
@@ -673,6 +653,7 @@
                 d3.select("#svgCont").selectAll("svg > *").remove();
                 drawChart(aData)
                 d3.select('#rect1').on('click', (event, d) => {
+                    console.log(2)
                     d3.select("#svgCont").selectAll("svg > *").remove();
                     d3.select('#rect1').remove()
                     d3.select('#svgTopo').attr('opacity', 1)

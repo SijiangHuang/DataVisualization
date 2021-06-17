@@ -38,6 +38,9 @@
         width = 1000 - margin.left - margin.right
         height = 600 - margin.top - margin.bottom
         let detailed_switch = -1
+        let detailed_switch_data = -1
+        let detailed_switch_counter = -1
+        let small_detailed_switch_counter = -1
         colormap = {
             "Host": "RoyalBlue",
             "Tor": 'Crimson',
@@ -84,6 +87,15 @@
                 return frame !== null || timer !== null || interval !== null;
             }
 
+            let fake_detail_data_0 = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+            let fake_detail_data_1 = [40, 50, 60, 70, 80, 90, 10, 20, 30];
+            let fake_detail_data_2 = [10, 20, 30, 70, 80, 40, 50, 60, 90];
+            let fake_detail_data_3 = [10, 60, 70, 80, 90, 20, 30, 40, 50];
+            let fake_detail_data_4 = [50, 60, 70, 80, 90, 10, 20, 30, 40];
+            let fake_detail_data_5 = [40, 50, 60, 10, 20, 30, 90, 70, 80];
+            let fake_detail_data_6 = [20, 30, 50, 60, 70, 80, 90, 40, 10];
+            let fake_detail_data_7 = [30, 60, 70, 10, 20, 80, 90, 40, 50];
+
             function tick() {
                 if (form.i.valueAsNumber === (direction > 0 ? values.length - 1 : direction < 0 ? 0 : NaN)) {
                     if (!loop) return stop();
@@ -97,6 +109,39 @@
                 }
                 if (delay === null) frame = requestAnimationFrame(tick);
                 step();
+
+                // update switches' detailed view, if there is one
+                if (detailed_switch >= 0) {
+                    let xx = parseFloat(detailed_switch_data.x);
+                    let yy = parseFloat(detailed_switch_data.y);
+                    let pos = [xx, yy];
+                    let da = [10, 20, 25];
+                    let switch_port_height = 20;
+                    let switch_port_width = 20;
+                    let switch_detail_width = 230;
+                    let switch_detail_height = 160;
+
+                    if (pos[0] > 1300) { // make sure the view is not out of window
+                        pos[0] -= switch_detail_width;
+                    }
+
+                    small_detailed_switch_counter += 1
+                    if (small_detailed_switch_counter >= 5) {
+                        detailed_switch_counter += 1
+                        small_detailed_switch_counter = 0
+
+                        let duration_local = 500
+
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-0").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_0[detailed_switch_counter]).attr("height", fake_detail_data_0[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-1").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_1[detailed_switch_counter]).attr("height", fake_detail_data_1[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-2").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_2[detailed_switch_counter]).attr("height", fake_detail_data_2[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-3").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_3[detailed_switch_counter]).attr("height", fake_detail_data_3[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-4").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_4[detailed_switch_counter]).attr("height", fake_detail_data_4[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-5").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_5[detailed_switch_counter]).attr("height", fake_detail_data_5[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-6").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_6[detailed_switch_counter]).attr("height", fake_detail_data_6[detailed_switch_counter]);
+                        d3.select("#svgTopo").select(".switch-port-" + String(detailed_switch) + "-7").transition().duration(duration_local).attr('y', pos[1] + switch_detail_height - fake_detail_data_7[detailed_switch_counter]).attr("height", fake_detail_data_7[detailed_switch_counter]);
+                    }
+                }
             }
 
             function step() {
@@ -144,7 +189,7 @@
 
             let switchid = id;
 
-            if (pos[0] > 1300) {
+            if (pos[0] > 1300) { // make sure the view is not out of window
                 pos[0] -= switch_detail_width;
             }
 
@@ -166,9 +211,11 @@
                         d3.select("#svgTopo").selectAll("#switch-detail-" + String(detailed_switch)).remove();
                     }
                     detailed_switch = -1;
+                    detailed_switch_data = -1;
+                    detailed_switch_counter = -1;
                 });
 
-            // downlink ports
+            // uplink ports
             for (let i = 0; i < 4; i++) {
                 rect
                     .append('rect')
@@ -181,17 +228,19 @@
                     .attr("class", "switch-port-" + String(switchid) + "-" + String(i));
             }
 
-            // uplink ports
-            for (let i = 4; i < 8; i++) {
-                rect
-                    .append('rect')
-                    .attr('x', pos[0] + 57 * (i - 4) + 20)
-                    .attr('y', pos[1])
-                    .attr('width', 20)
-                    .attr('height', switch_port_height)
-                    .attr("class", "switch-port-" + String(switchid) + "-" + String(i))
-                    .attr("id", "switch-detail-" + String(switchid))
-                    .attr('fill', 'rgba(0, 0, 0, 0.5)');
+            if (switchid < 97) { // for cores, there are only 4 ports
+                // downlink ports
+                for (let i = 4; i < 8; i++) {
+                    rect
+                        .append('rect')
+                        .attr('x', pos[0] + 57 * (i - 4) + 20)
+                        .attr('y', pos[1])
+                        .attr('width', 20)
+                        .attr('height', switch_port_height)
+                        .attr("class", "switch-port-" + String(switchid) + "-" + String(i))
+                        .attr("id", "switch-detail-" + String(switchid))
+                        .attr('fill', 'rgba(0, 0, 0, 0.5)');
+                }
             }
         }
 
@@ -540,6 +589,8 @@
                         d3.select("#svgTopo").selectAll("#switch-detail-" + String(detailed_switch)).remove();
                     }
                     detailed_switch = parseInt(d.id);
+                    detailed_switch_data = d;
+                    detailed_switch_counter = 0;
                     PlotSwitchDetail(d.x, d.y, d.type, d.id);
                 });
         })

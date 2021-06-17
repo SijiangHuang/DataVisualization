@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<!-- Data Center Traffic Visualization -->
+<!-- author: sijiang huang <hsj20@mails.tsinghua.edu.cn> -->
+<!-- author: cong liang <liang-cong@foxmail.com> -->
+
+<head>
+    <meta charset="utf-8">
+    <script src="d3.min.js"></script>
+    <script src="d3.sankey.js"></script>
+    <style>
+        svg {
+            position: absolute;
+        }
+
+        canvas {
+            position: absolute;
+        }
+    </style>
+</head>
+
+<body>
+    <form id="form1"
+        style="font: 12px var(--sans-serif); font-variant-numeric: tabular-nums; display: flex; height: 53px; align-items: center;">
+        <button name=b type=button style="margin-left: 15em; margin-right: 2em; width: 5em;"></button>
+        <label style="display: flex; align-items: center;">
+            <input name=i type=range min=0 max=100 value=0 step=1 style="width: 1000px;">
+            <output name=o style="margin-left: 2em;"></output>
+        </label>
+    </form>
+    <svg id="svgTopo" width="1600" height="900"> </svg>
+    <svg id="svgCont" width="1000" height="500"> </svg>
+    <canvas id="canvasCont" width="1000" height="500"> </canvas>
+
+    <script>
+        let currentTime = null
+
+        margin = ({ top: 100, right: 100, bottom: 50, left: 100 })
+        width = 1000 - margin.left - margin.right
+        height = 600 - margin.top - margin.bottom
+        colormap = {
+            "Host": "RoyalBlue",
+            "Tor": 'Crimson',
+            "inTor": 'RoyalBlue',
+            "outTor": 'LimeGreen',
+            "inPod": 'Crimson',
+            "outPod": 'GoldenRod',
+            "pod1": "LimeGreen",
+            "pod2": "LimeGreen",
+            "pod3": "LimeGreen"
+        }
+
+        function Scrubber(tdata, pdata, ndata, form, values, {
+            format = value => value,
+            initial = 0,
+            delay = null,
+            autoplay = true,
+            loop = false,
+            loopDelay = null,
+            alternate = false
+        } = {}) {
+            values = Array.from(values);
+            form.i.max = values.length - 1
+
+            let frame = null;
+            let timer = null;
+            let interval = null;
+            let direction = 1;
+
+            function start() {
+                form.b.textContent = "Pause";
+                if (delay === null) frame = requestAnimationFrame(tick);
+                else interval = setInterval(tick, delay);
+            }
+
+            function stop() {
+                form.b.textContent = "Play";
+                if (frame !== null) cancelAnimationFrame(frame), frame = null;
+                if (timer !== null) clearTimeout(timer), timer = null;
+                if (interval !== null) clearInterval(interval), interval = null;
+            }
+
+            function running() {
+                return frame !== null || timer !== null || interval !== null;
+            }
+
+            function tick() {
+                if (form.i.valueAsNumber === (direction > 0 ? values.length - 1 : direction < 0 ? 0 : NaN)) {
+                    if (!loop) return stop();
+                    if (alternate) direction = -direction;
+                    if (loopDelay !== null) {
+                        if (frame !== null) cancelAnimationFrame(frame), frame = null;
+                        if (interval !== null) clearInterval(interval), interval = null;
+                        timer = setTimeout(() => (step(), start()), loopDelay);
+                        return;
+                    }
+                }
+                if (delay === null) frame = requestAnimationFrame(tick);
+                step();
+            }
+
+            function step() {
+                form.i.valueAsNumber = (form.i.valueAsNumber + direction + values.length) % values.length;
+                form.i.dispatchEvent(new CustomEvent("input", {
+                    bubbles: true
+                }));
+            }
+            form.i.oninput = event => {
+                if (event && event.isTrusted && running()) stop();
+                form.value = values[form.i.valueAsNumber];
+                form.o.value = format(form.value, form.i.valueAsNumber, values);
+                currentTime = form.o.value
+                FlowTrans(currentTime, tdata, pdata)
+                NodeTrans(currentTime, ndata)
+            };
+            form.b.onclick = () => {
+                if (running()) return stop();
+                direction = alternate && form.i.valueAsNumber === values.length - 1 ? -1 : 1;
+                form.i.valueAsNumber = (form.i.valueAsNumber + direction) % values.length;
+                form.i.dispatchEvent(new CustomEvent("input", {
+                    bubbles: true
+                }));
+                start();
+            };
+            form.i.oninput();
+            if (autoplay) start();
+            else stop();
+            return form;
+        }
+
+        function PLotFlows(pathDir) {
+            d3.csv(pathDir).then(data => {
+                let nFlow = d3.max(data, d => {
+                    return Number(d.id) + 1;
+                })
+                for (i = 0; i < nFlow; i++) {
+                    let flowSlice = data.filter(d => d.id == i)
+                    var size = flowSlice[0].size
+
+                    d3.select("svg")
+                        .append('path')
+                        .attr('id', 'path' + String(i))
+                        .attr('stroke', 'red')
+                        .attr('fill', 'none')
+                        .attr('stroke-width', 5)
+                        .attr('opacity', 1)
+                        .attr('d', pathLine(flowSlice))
+                    var p = document.getElementById('path' + String(i))
+                    const len = p.getTotalLength();
+
+                    d3.select("svg")
+                        .select('#path' + String(i))
+                        .attr('stroke-dasharray', `0, ${len}`)
+                }
+            })
+        }
+
+        function PlotFlow(pathData, flowid, cwnd, length) {
+
+            var p = document.getElementById('path' + String(flowid))
+            const len = p.getTotalLength();
+            let curlen = d3.select("#svgTopo")
+                .select('#path' + String(flowid)).attr('stroke-dasharray')
+
+            length = length * len
+            curlen = curlen.split(',')
+
+            d3.select("#svgTopo")
+                .select('#path' + String(flowid))
+                .transition()
+                .ease(d3.easeLinear)
+                .attr('opacity', cwnd)
+                .duration(200)
+                .attrTween("stroke-dasharray", function () {
+                    return d3.interpolate(`${curlen[0]}, ${len}`, `${length}, ${len}`);
+                })
+        }
+
+        function FlowTrans(time, tdata, pdata) {
+            var flowSlice = tdata.filter(d => d.time == time)
+            for (slice in flowSlice) {
+                let flowPath = pdata.filter(d => d.id == flowSlice[slice].id)
+                PlotFlow(flowPath, flowPath[0].id, flowSlice[slice].cwnd, flowSlice[slice].length)
+            }
+        }
+        function NodeTrans(time, ndata) {
+            var nodeExtent = d3.extent(ndata, function (d) { return +d.value });
+
+            var nodeScale = d3.scaleLinear().domain(nodeExtent).range([0.2, 1.5]);
+            var slice = ndata.filter(d => d.time == time)
+            slice.forEach(function (d, i) {
+                alpha = nodeScale(+d.value)
+                if (alpha > 1) {
+                    alpha = 1
+                }
+                d3.select("#svgTopo")
+                    .select("#switch" + String(i))
+                    .transition()
+                    .duration(200)
+                    .attr('opacity', alpha)
+            })
+        }
+
+        function HostFocus(d, pdata) {
+            p = document.getElementsByClassName('server')
+            cx = d3.select(p[d]).attr("cx")
+            cy = d3.select(p[d]).attr("cy")
+
+            hdata = pdata.filter(d => d.x == cx)
+            hdata = hdata.filter(d => d.y == cy)
+            let nFlow = d3.max(pdata, d => {
+                return Number(d.id) + 1;
+            })
+            cwnd = new Array(nFlow)
+            pdata.forEach(function (d) {
+                cwnd[d.id] = d3.select('#path' + String(d.id))
+                    .attr('opacity')
+            })
+            pdata.forEach(function (d) {
+                d3.select('#path' + String(d.id))
+                    .attr('opacity', 0)
+            })
+            hdata.forEach(function (d) {
+                d3.select('#path' + String(d.id))
+                    .attr('stroke', 'royalblue')
+                    .attr('opacity', cwnd[d.id])
+            })
+            return cwnd;
+        }
+
+        function HostLoseFocus(d, pdata, cwnd) {
+            pdata.forEach(function (d, i) {
+                d3.select('#path' + String(d.id))
+                    .attr('stroke', 'red')
+                    .attr('opacity', cwnd[d.id])
+            })
+        }
+
+        drawChart = function (data) {
+            const svg = d3.select("#svgCont")
+            var sankey = d3.sankey()
+                .nodeWidth(15)
+                .nodePadding(10)
+                .size([width, height]);
+
+            var formatNumber = d3.format(",.0f"),
+                format = function (d) { return formatNumber(d) + " TWh"; }
+
+            var path = sankey.link();
+
+            var freqCounter = 1;
+
+            data.links.forEach(function (d) {
+                d.o_value = d.rate;
+            })
+
+            data.nodes.forEach(function (d, i) {
+                d.color = colormap[d.name]
+            })
+
+            sankey
+                .nodes(data.nodes)
+                .links(data.links)
+                .layout(256);
+
+            var link = svg.append("g").selectAll(".link")
+                .data(data.links)
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("d", path)
+                .attr("fill", "none")
+                .attr("stroke", "gray")
+                .attr("opacity", 0.15)
+                .attr("stroke-width", d => Math.max(1, d.dy))
+                .sort(function (a, b) { return b.dy - a.dy })
+
+            var node = svg.append("g").selectAll(".node")
+                .data(data.nodes)
+                .enter().append("g")
+                .attr("class", "node")
+                .attr("transform", function (d) { return "translate(" + d.x + ", " + d.y + ")"; })
+                .call(d3.drag()
+                    .on("drag", function (event, d) {
+                        d.x = event.x
+                        d.y = event.y
+                        d3.select(this).attr("transform", d => `translate(${d.x},${d.y})`);
+                        sankey.relayout();
+                        link.attr("d", path);
+                    }
+                    ));
+
+            node.append("rect")
+                .attr("height", function (d) { return d.dy; })
+                .attr("width", sankey.nodeWidth())
+                .attr("opacity", 0.8)
+                .style("fill", function (d, i) { return d.color })
+                .style("stroke", "none")
+
+            var linkExtent = d3.extent(data.links, function (d) { return d.o_value });
+
+            var frequencyScale = d3.scaleLinear().domain(linkExtent).range([0.05, 1]);
+
+            data.links.forEach(function (link) {
+                link.freq = frequencyScale(link.o_value);
+                link.particleSize = 2;
+                link.particleColor = d3.scaleLinear().domain([0, 1])
+                    .range([link.source.color, link.target.color])
+            });
+
+            var particles = [];
+
+            function tick(elapsed, time) {
+                //Remove complete particles
+                particles = particles.filter(function (d) { return d.current < d.path.getTotalLength() });
+
+
+                function particleEdgeCanvasPath(elapsed) {
+                    var context = d3.select("canvas").node().getContext("2d")
+
+                    context.clearRect(0, 0, width, height);
+
+                    context.fillStyle = "gray";
+                    context.lineWidth = "1px";
+
+                    for (var x in particles) {
+                        //Particle Progress: difference between current time, and time of creation
+                        var currentTime = elapsed - particles[x].time;
+                        particles[x].current = currentTime * 0.15 * particles[x].speed
+                        var currentPos = particles[x].path.getPointAtLength(particles[x].current);
+                        context.beginPath();
+                        context.fillStyle = particles[x].link.particleColor(0);
+                        context.arc(currentPos.x, currentPos.y + particles[x].offset, particles[x].link.particleSize, 0, 2 * Math.PI);
+                        context.fill();
+
+                    }
+                };
+
+                //Generate particle data
+                d3.selectAll("path.link")
+                    .each(function (d) {
+                        for (var x = 0; x < 2; x++) {
+                            //Y jitter
+                            var offset = (Math.random() - .5) * (d.dy - 4);
+                            //Generate particles based on frequency distribution
+                            if (Math.random() < d.freq) {
+                                var length = this.getTotalLength();
+                                particles.push({ link: d, time: elapsed, offset: offset, path: this, length: length, animateTime: length, speed: 0.5 + (Math.random()) })
+                            }
+                        }
+                    })
+                particleEdgeCanvasPath(elapsed)
+            };
+
+            var t = d3.timer(tick, 0);
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 5)
+                .attr('y', 430)
+                .attr('fill', 'royalblue')
+                .attr('font-size', 20)
+                .html("Host");
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 200)
+                .attr('y', 430)
+                .attr('fill', 'crimson')
+                .attr('font-size', 20)
+                .html("ToR Switch");
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 390)
+                .attr('y', 390)
+                .attr('fill', 'limegreen')
+                .attr('font-size', 20)
+                .html("Agg Switch");
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 540)
+                .attr('y', 390)
+                .attr('fill', 'goldenrod')
+                .attr('font-size', 20)
+                .html("Core Switch");
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 810)
+                .attr('y', 80)
+                .attr('fill', 'royalblue')
+                .attr('font-size', 20)
+                .html("Intra ToR");
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 810)
+                .attr('y', 225)
+                .attr('fill', 'crimson')
+                .attr('font-size', 20)
+                .html("Intra Pod");
+
+            svg.append('text')
+                .attr('class', 'label')
+                .attr('x', 810)
+                .attr('y', 380)
+                .attr('fill', 'limegreen')
+                .attr('font-size', 20)
+                .html("Inter Pod");
+        }
+
+        // topology
+        dataDir = './8-port/'
+        topoDir = dataDir + 'topo-nodes.csv'
+        lineDir = dataDir + 'topo-lines.csv'
+        timeDir = dataDir + 'flows-time.csv'
+        pathDir = dataDir + 'flows-path.csv'
+        nodeDir = dataDir + 'node-traffic.csv'
+        sankeyDir = dataDir + 'sankey-links.csv'
+        d3.csv(topoDir).then(data => {
+            d3.select("#svgTopo")
+                .selectAll('circle.server')
+                .data(data.filter(d => d.type == 'H'))
+                .enter()
+                .append('circle')
+                .attr('class', 'server')
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .attr("r", 5)
+            d3.csv(pathDir).then(pdata => {
+                d3.selectAll('circle.server').on('mouseover', (event, d) => {
+                    cwnd = HostFocus(d, pdata)
+                })
+                d3.selectAll('circle.server').on('mouseout', (event, d) => {
+                    HostLoseFocus(d, pdata, cwnd)
+                })
+            }
+            )
+            d3.select("#svgTopo")
+                .selectAll('rect.switch')
+                .data(data.filter(d => d.type == 'S'))
+                .enter()
+                .append('rect')
+                .attr('class', 'switch')
+                .attr('id', (d, i) => {
+                    return 'switch' + String(i)
+                })
+                .attr('x', d => d.x - 5)
+                .attr('y', d => d.y - 5)
+                .attr("height", 10)
+                .attr("width", 10)
+                .attr("fill", 'royalblue')
+                .attr('opacity', 0.5)
+        })
+        d3.csv(lineDir).then(data => {
+            d3.select("svg")
+                .selectAll('line.lines')
+                .data(data)
+                .enter()
+                .append("line")
+                .attr('class', 'lines')
+                .attr("x1", d => d.x1)
+                .attr("x2", d => d.x2)
+                .attr("y1", d => d.y1)
+                .attr("y2", d => d.y2)
+                .attr("stroke", "black")
+                .attr("stroke-width", 5)
+                .attr("opacity", 0.06)
+                .attr('stroke-dasharray', "10,0")
+        })
+
+        d3.csv(timeDir).then(tdata => {
+            d3.csv(pathDir).then(pdata => {
+                d3.csv(nodeDir).then(ndata => {
+                    numbers = Array.from({
+                        length: 200
+                    }, (_, i) => i)
+                    let form = document.getElementById("form1")
+                    Scrubber(tdata, pdata, ndata, form, numbers, {
+                        autoplay: true,
+                        delay: 200
+                    })
+                })
+            })
+        })
+
+        const pathLine = d3.line().x(d => d.x).y(d => d.y);
+        PLotFlows(pathDir)
+
+        d3.csv(sankeyDir).then(data => {
+            d3.selectAll('circle.server').on('click', (event, id) => {
+                aData = {
+                    "nodes": [{
+                        "name": "Host"
+                    },
+                    {
+                        "name": "Tor"
+                    },
+                    {
+                        "name": "inTor"
+                    },
+                    {
+                        "name": "outTor"
+                    },
+                    {
+                        "name": "inPod"
+                    },
+                    {
+                        "name": "outPod"
+                    },
+                    {
+                        "name": "pod1"
+                    },
+                    {
+                        "name": "pod2"
+                    },
+                    {
+                        "name": "pod3"
+                    }
+
+                    ],
+                    "links": [{
+                        "source": 0,
+                        "target": 1,
+                        "value": 99,
+                        "rate": 300
+                    },
+                    {
+                        "source": 1,
+                        "target": 2,
+                        "value": 33,
+                        "rate": 200
+                    },
+                    {
+                        "source": 1,
+                        "target": 3,
+                        "value": 66,
+                        "rate": 100
+                    },
+                    {
+                        "source": 3,
+                        "target": 4,
+                        "value": 33,
+                        "rate": 60
+                    },
+                    {
+                        "source": 3,
+                        "target": 5,
+                        "value": 33,
+                        "rate": 40
+                    },
+                    {
+                        "source": 5,
+                        "target": 6,
+                        "value": 11,
+                        "rate": 20
+                    },
+                    {
+                        "source": 5,
+                        "target": 7,
+                        "value": 11,
+                        "rate": 10
+                    },
+                    {
+                        "source": 5,
+                        "target": 8,
+                        "value": 11,
+                        "rate": 10
+                    }
+                    ]
+                }
+                sdata = data.filter(d => d.id == id)
+                sdata.forEach(function (d, i) {
+                    aData.links[i].rate = +d.rate
+                })
+                d3.select('#svgTopo').attr('opacity', 0)
+                d3.select('#svgTopo').append('rect')
+                    .attr('class', 'trigger')
+                    .attr('id', 'rect1')
+                    .attr('x', 0)
+                    .attr('y', 450)
+                    .attr('width', 800)
+                    .attr('height', 200)
+                d3.select("#svgCont").selectAll("svg > *").remove();
+                drawChart(aData)
+                d3.select('#rect1').on('click', (event, d) => {
+                    d3.select("#svgCont").selectAll("svg > *").remove();
+                    d3.select('#rect1').remove()
+                    d3.select('#svgTopo').attr('opacity', 1)
+                }
+                )
+            }
+            )
+        })
+    </script>
+</body>

@@ -144,6 +144,10 @@
 
             let switchid = id;
 
+            if (pos[0] > 1300) {
+                pos[0] -= switch_detail_width;
+            }
+
             rect
                 .append('rect')
                 .attr('x', pos[0])
